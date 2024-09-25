@@ -1,0 +1,61 @@
+﻿
+ -- Open tickets in december 2018
+
+EVALUATE
+	CALCULATETABLE(
+		SELECTCOLUMNS (
+	        NATURALINNERJOIN (
+	            CALCULATETABLE (
+	                Complaints,
+	                TREATAS ( { 2018 }, ComplaintCalendar[Year] ),
+	                TREATAS ( { 12 }, ComplaintCalendar[Month] )
+	            ),
+	            // Deberian ser 70 Closed vs 21 abiertas total 91
+	            Products
+	        ),
+	        "Complaint ID", Complaints[ID],
+	        "Registration Date", Complaints[ComplainDate],
+	        "Resolution Date", Complaints[CompletionDate],
+	        "Product Category", Products[ProductCategory],
+	        "Ellapsed Days", Complaints[Ellapsed Days],
+	        "Target Resolution Days", Products[Guarantee Resolution Days]
+	    ),
+	    FILTER(Complaints, Complaints[CompletionDate] > [Selected Last Date])
+    )
+
+-- Open tickets on time in december 2018
+
+EVALUATE 
+	CALCULATETABLE(SELECTCOLUMNS(Complaints, Complaints[ID], Complaints[ComplainDate], Complaints[CompletionDate], Complaints[Ellapsed Days]),
+            FILTER(Complaints, IF(ISBLANK(Complaints[CompletionDate]), TODAY(), Complaints[CompletionDate]) > [Selected Last Date]),
+            FILTER(Complaints, Complaints[Ellapsed Days] <= RELATED(Products[Guarantee Resolution Days])),
+            TREATAS ( { 2018 }, ComplaintCalendar[Year] ),
+            TREATAS ( { 12 }, ComplaintCalendar[Month] )
+    )
+    
+-- Open tickets delayed in december 2018
+EVALUATE 
+	CALCULATETABLE(SELECTCOLUMNS(Complaints, Complaints[ID], Complaints[ComplainDate], Complaints[CompletionDate], Complaints[Ellapsed Days]),
+            FILTER(Complaints, IF(ISBLANK(Complaints[CompletionDate]), TODAY(), Complaints[CompletionDate]) > [Selected Last Date]),
+            FILTER(Complaints, Complaints[Ellapsed Days] > RELATED(Products[Guarantee Resolution Days])),
+            TREATAS ( { 2018 }, ComplaintCalendar[Year] ),
+            TREATAS ( { 12 }, ComplaintCalendar[Month] )
+    )
+
+
+-- Classify orders by Closed, Open on Time, Open Delayed by selected period
+EVALUATE
+SUMMARIZECOLUMNS (
+    ComplaintCalendar[Year],
+    ComplaintCalendar[Month], 
+    CALCULATETABLE(ComplaintCalendar, ComplaintCalendar[Date] >= DATE(2018,9,4)),
+    "Total Complaints", [Total Complaints],
+    "Closed", [Closed Complaints],
+    "Open On Time", [Open Complaints On Time],
+    "Open Delayed", [Open Complaints Delayed]
+ 
+)
+ORDER BY
+    ComplaintCalendar[Year],
+    ComplaintCalendar[Month]
+    

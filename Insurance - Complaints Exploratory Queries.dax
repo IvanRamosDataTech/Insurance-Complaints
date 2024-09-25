@@ -1,0 +1,213 @@
+﻿DEFINE
+    MEASURE StatusHistory[Start Date] =
+        MIN ( StatusHistory[StatusDate] )
+    MEASURE StatusHistory[End Date] =
+        MAX ( StatusHistory[StatusDate] )
+    MEASURE StatusHistory[Ellapsed days] =
+        DATEDIFF ( [Start Date], [End Date], DAY )
+    MEASURE Complaints[Total Complaints] =
+        COUNT ( Complaints[ID] )
+    MEASURE Complaints[Closed Complaints] =
+        CALCULATE (
+            [Total Complaints],
+            FILTER ( Complaints, Complaints[CompletionDate] < [End Date] )
+        )
+    MEASURE Brokers[Total Brokers] =
+        COUNT ( Brokers[BrokerID] )
+    MEASURE Complaints[Urgent Complaints] =
+        CALCULATE ( [Total Complaints], Complaints[Priority] = "Urgent" )
+    MEASURE Complaints[Non Urgent Complaints] =
+        CALCULATE ( [Total Complaints], Complaints[Priority] = "Non Urgent" )
+    MEASURE Complaints[Complaints prev month] =
+        CALCULATE ( [Total Complaints], DATEADD ( ComplaintCalendar[Date], -1, MONTH ) )
+    MEASURE Regions[Estimated Population] =
+        SUM ( Regions[population] )
+    MEASURE Complaints[Satisfied] =
+        CALCULATE ( COUNT ( Complaints[ID] ), Complaints[ClientSatisfaction] = "SAT" )
+    MEASURE Complaints[Non Satisfied] =
+        CALCULATE ( COUNT ( Complaints[ID] ), Complaints[ClientSatisfaction] = "NSA" )
+    MEASURE Complaints[Satisfaction No Answer] =
+        CALCULATE ( COUNT ( Complaints[ID] ), Complaints[ClientSatisfaction] = "N/A" )
+    MEASURE Complaints[Days with Complaints] =
+        DISTINCT ( Complaints[ComplainDate] ) -- Our period of time for evaluation is between 04/09/2018 and 15/05/2020
+-- Quick completeness check on this period There are 26 missing days in this period (holidays perhaps?)
+
+EVALUATE
+ROW (
+    "Status Logs Init Date", [Start Date],
+    "Status Logs End Date", [End Date],
+    "Ellapsed Days", [Ellapsed days],
+    "WorkDays", NETWORKDAYS ( [Start Date], [End Date] ),
+    "Days with Complaints",
+        CALCULATE (
+            COUNTAX ( DISTINCT ( Complaints[ComplainDate] ), Complaints[ComplainDate] ),
+            FILTER (
+                ComplaintCalendar,
+                ComplaintCalendar[Date] >= CALCULATE ( [Start Date], ALL () )
+            )
+        )
+)
+-- Lifetime (in days) of complaints until get either closed or resolved for both individuals and companies.
+
+EVALUATE
+VAR closedComplains =
+    CALCULATETABLE ( VALUES ( Complaints[ID] ), Complaints[Status] = "CLOSED" )
+RETURN
+    ADDCOLUMNS (
+        SUMMARIZE (
+            FILTER ( StatusHistory, StatusHistory[ComplaintID] IN closedComplains ),
+            StatusHistory[ComplaintID]
+        ),
+        "Complaint Start Date", [Start Date],
+        "Complaint Finish Date", [End Date],
+        "Ellapsed days", [Ellapsed days]
+    )
+-- Average lifetime (in days) of complaints until get either closed or resolved for both individuals and companies.
+
+EVALUATE
+{
+    AVERAGEX (
+        SUMMARIZE (
+            CALCULATETABLE ( StatusHistory, Complaints[Status] = "CLOSED" ),
+            StatusHistory[ComplaintID],
+            "Ellapsed days", [Ellapsed days]
+        ),
+        [Ellapsed days]
+    )
+}
+-- I want to see complaint volume over time and separated by Urgent/Non Urgent, and showing % Increase/Decrease respective last month
+-- (The most recent 2 years of data is what most stakeholders are interested in)
+
+EVALUATE
+SUMMARIZECOLUMNS (
+    ComplaintCalendar[Year],
+    ComplaintCalendar[Month],
+    FILTER (
+        ComplaintCalendar,
+        ComplaintCalendar[Date] >= CALCULATE ( [Start Date], ALL () )
+    ),
+    "Complaints", [Total Complaints],
+    "Prev Month", [Complaints prev month],
+    "Variation %",
+        ROUND (
+            DIVIDE ( [Total Complaints] - [Complaints prev month], [Complaints prev month] ) * 100,
+            2
+        ),
+    "Urgent", [Urgent Complaints],
+    "Non Urgent", [Non Urgent Complaints]
+)
+ORDER BY
+    ComplaintCalendar[Year],
+    ComplaintCalendar[Month]
+-- I’m interested in the top 10 of complaints by broker, so I can identify if certain brokers need a hand for their career improvement's
+
+EVALUATE
+TOPN (
+    10,
+    SUMMARIZECOLUMNS (
+        Brokers[BrokerFullName],
+        Brokers[DistributionNetwork],
+        Brokers[CommissionScheme],
+        FILTER (
+            ComplaintCalendar,
+            ComplaintCalendar[Date] >= CALCULATE ( [Start Date], ALL () )
+        ),
+        "Total Complaints", [Total Complaints]
+    ),
+    [Total Complaints], DESC
+)
+ORDER BY [Total Complaints] DESC
+-- I want to know most problematic commission schemes
+
+EVALUATE
+SUMMARIZECOLUMNS (
+    Brokers[CommissionScheme],
+    FILTER (
+        ComplaintCalendar,
+        ComplaintCalendar[Date] >= CALCULATE ( [Start Date], ALL () )
+    ),
+    "Total Complaints", [Total Complaints],
+    "Total Brokers", [Total Brokers],
+    "Broker/Scheme ratio", DIVIDE ( [Total Complaints], [Total Brokers] )
+)
+-- By Dsitribution Network
+
+EVALUATE
+SUMMARIZECOLUMNS (
+    Brokers[DistributionNetwork],
+    FILTER (
+        ComplaintCalendar,
+        ComplaintCalendar[Date] >= CALCULATE ( [Start Date], ALL () )
+    ),
+    "Total Complaints", [Total Complaints],
+    "% of All Complaints",
+        ROUND (
+            DIVIDE (
+                [Total Complaints],
+                CALCULATE ( [Total Complaints], REMOVEFILTERS ( Brokers[DistributionNetwork] ) )
+            ) * 100,
+            2
+        ),
+    "Total Brokers", [Total Brokers],
+    "Broker/Distribution ratio", DIVIDE ( [Total Complaints], [Total Brokers] )
+)
+-- I need a map that shows impacts by complaints across territories.
+-- Map should show complaints ratio volume/population and median income in such territory,
+-- also want to know satisfaction % of total complains by such region
+-- Historical complaints by Region
+
+EVALUATE
+SUMMARIZECOLUMNS (
+    Regions[region],
+    Regions[state],
+    "Complaints", [Total Complaints],
+    "Satisfied %", ROUND ( DIVIDE ( [Satisfied], [Total Complaints] ) * 100, 2 ),
+    "Non Satisfied %", ROUND ( DIVIDE ( [Non Satisfied], [Total Complaints] ) * 100, 2 ),
+    "No Answer %", ROUND ( DIVIDE ( [Satisfaction No Answer], [Total Complaints] ) * 100, 2 ),
+    "Population", [Estimated Population],
+    "Complaint/Population ratio",
+        DIVIDE ( [Total Complaints], [Estimated Population] ) * 1000 -- How can I get a more meaninful number here? more understandable
+)
+ORDER BY [Complaint/Population ratio] DESC
+-- I want to know most problematic products. A summary table of ratio % between product specific complaints / total complaints
+
+EVALUATE
+SUMMARIZECOLUMNS (
+    Products[ProductCategory],
+    Products[ProductSubCategory],
+    Products[Product],
+    FILTER (
+        ComplaintCalendar,
+        ComplaintCalendar[Date] >= CALCULATE ( [Start Date], ALL () )
+    ),
+    "Complaints", [Total Complaints],
+    "% of Total",
+        ROUND (
+            DIVIDE (
+                [Total Complaints],
+                CALCULATE (
+                    [Total Complaints],
+                    REMOVEFILTERS (
+                        Products[ProductCategory],
+                        Products[ProductSubCategory],
+                        Products[Product]
+                    )
+                )
+            ) * 100,
+            2
+        )
+)
+ORDER BY [% of Total] DESC
+-- Complaints by Product category
+
+EVALUATE
+	CALCULATETABLE(
+		SUMMARIZECOLUMNS(
+			Products[ProductCategory],
+			"Complaints", [Total Complaints],
+			"Distribution", ROUND(DIVIDE([Total Complaints], CALCULATE([Total Complaints],REMOVEFILTERS(Products[ProductCategory]))) * 100, 2),
+			"Total Complaints", CALCULATE([Total Complaints],REMOVEFILTERS(Products[ProductCategory]))
+		),
+		TREATAS({2020}, ComplaintCalendar[Year]),
+		TREATAS({1}, ComplaintCalendar[Month])
+	)
