@@ -1,0 +1,29 @@
+Insurance ComplaintsView Best Entries (3)
+Analyze the data of a large insurance company who are due to undergo an internal audit with regard to its complaint’s procedure
+
+article
+Intro
+Management have asked you to look at the model and produce insights for management level that can highlight any issues and prepare them for the audit.
+
+work
+The Brief
+You are working at a large insurance company who are due to undergo an internal audit with regards to their complaint’s procedure.
+
+The company are forward thinking and currently have a data warehouse in place alongside several models.
+
+Management have asked you to look at the model and produce insights for management level that can highlight any issues and prepare them for the audit.
+
+Given your recent work they have complete trust in your ability and have given you freedom to present this back as you see fit.
+
+Some factors to consider:
+
+The most recent 2 years of data is what most stakeholders are interested in
+The ability to see status changes and when they happened
+Complaints broken down by the dimensions
+Client Satisfaction
+Worst offending brokers
+Objective:
+Utilize the 4 pillars of report development using best practices: data transformation, data modeling, DAX calculations and reporting and visualization
+Work with a real data
+Look at the model and produce insights for management level that can highlight any issues and prepare them for the audit
+Create a report using visualization tools and techniques that will communicate the key information
